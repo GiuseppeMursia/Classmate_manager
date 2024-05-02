@@ -1,3 +1,4 @@
+import fileinput
 import os
 import subprocess
 import sys
@@ -22,19 +23,98 @@ def wifi_connect(ssid, password=""):
     except subprocess.CalledProcessError as e:
         print(f"Error connecting to WiFi: {e}")
 
+def ip_config_dhcp(connection):
+    if connection not in ['eth0', 'wlan0']:
+        print("Invalid connection specified.")
+        return
+
+    interfaces_file = '/etc/network/interfaces'
+
+    try:
+        new_config_lines = [
+            f'allow-hotplug {connection}\n',
+            f'iface {connection} inet dhcp\n'
+        ]
+
+        # Leggi le configurazioni esistenti
+        with open(interfaces_file, 'r') as file:
+            existing_config = file.readlines()
+
+        # Rimuovi le vecchie configurazioni per l'interfaccia specificata
+        new_config = []
+        found_interface = False
+        for line in existing_config:
+            if line.strip() == f'allow-hotplug {connection}':
+                found_interface = True
+            elif found_interface and line.strip().startswith('allow-hotplug'):
+                found_interface = False
+            if not found_interface:
+                new_config.append(line)
+
+        # Aggiungi le nuove configurazioni
+        new_config.extend(new_config_lines)
+
+        # Scrivi le nuove configurazioni nel file
+        with open(interfaces_file, 'w') as file:
+            file.writelines(new_config)
+
+        # Riavvia il servizio di networking
+        subprocess.run(['sudo', 'systemctl', 'restart', 'networking'], check=True)
+
+    except FileNotFoundError:
+        print("File not found:", interfaces_file)
+    except Exception as e:
+        print("An error occurred:", str(e))
 
 
-def ip_config(connection, ipaddress, netmask, route_gateway, primary_dns):
-    # Configurazione dell'indirizzo IP
+def ip_config_static(connection, ipaddress, netmask, route_gateway, primary_dns):
+    if connection not in ['eth0', 'wlan0']:
+        print("Invalid connection specified.")
+        return
 
-    #connection_name = get_active_connection_name()
-    #print(f"CONNECTION NAME: {connection_name}")
-    subprocess.run(['sudo', 'ifconfig', connection, ipaddress, 'netmask', netmask], check=True)
+    interfaces_file = '/etc/network/interfaces'
 
-    # Aggiunta del gateway predefinito (router)
-    subprocess.run(['sudo', 'route', 'add', 'default', 'gw', route_gateway], check=True)
+    try:
+        new_config_lines = [
+            f'allow-hotplug {connection}\n',
+            f'iface {connection} inet static\n',
+            f'    address {ipaddress}\n',
+            f'    netmask {netmask}\n',
+            f'    gateway {route_gateway}\n',
+            f'    dns-nameservers {primary_dns}\n'
+        ]
 
-    subprocess.run(['sudo', 'echo', f'nameserver {primary_dns}', '>>', '/etc/resolv.conf'], check=True)
+        # Leggi le configurazioni esistenti
+        with open(interfaces_file, 'r') as file:
+            existing_config = file.readlines()
+
+        # Rimuovi le vecchie configurazioni per l'interfaccia specificata
+        new_config = []
+        found_interface = False
+        for line in existing_config:
+            if line.strip() == f'allow-hotplug {connection}':
+                found_interface = True
+            elif found_interface and line.strip().startswith('allow-hotplug'):
+                found_interface = False
+            if not found_interface:
+                new_config.append(line)
+
+        # Aggiungi le nuove configurazioni
+        new_config.extend(new_config_lines)
+
+        # Scrivi le nuove configurazioni nel file
+        with open(interfaces_file, 'w') as file:
+            file.writelines(new_config)
+
+        # Riavvia il servizio di networking
+        subprocess.run(['sudo', 'systemctl', 'restart', 'networking'], check=True)
+
+    except FileNotFoundError:
+        print("File not found:", interfaces_file)
+    except Exception as e:
+        print("An error occurred:", str(e))
+
+
 
 
 def wifi_disconnect():
@@ -221,8 +301,11 @@ class UARTDevice:
                     wifi_connect(message_components[1], message_components[2])
             elif message_components[0] == "dhcp":
                 print('Nel dhcp:', "dhcp")
-                ip_config(message_components[1], message_components[2], message_components[3], message_components[4],
-                          message_components[5])
+                ip_config_dhcp(message_components[1])
+            elif message_components[0] == "static":
+                print('Nel static:', "static")
+                ip_config_static(message_components[1], message_components[2], message_components[3], message_components[4],
+                          message_components[5],)
             else:
                 print("Invalid message format")
 
